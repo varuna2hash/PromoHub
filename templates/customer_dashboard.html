@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Customer Dashboard{% endblock %}
+{% block content %}
+<h3>Welcome, {{ name }}</h3>
+<p class="small-muted">User type: {{ user_type }}</p>
+
+<div class="row g-3 my-3">
+  <div class="col-md-4"><div class="card p-3"><strong>Total Txns</strong><div>{{ total_transactions }}</div></div></div>
+  <div class="col-md-4"><div class="card p-3"><strong>Total Spent</strong><div>{{ total_spent }}</div></div></div>
+  <div class="col-md-4"><div class="card p-3"><strong>Total Promo</strong><div>{{ total_promos }}</div></div></div>
+</div>
+
+<h5>Transactions</h5>
+<table class="table table-striped datatable">
+  <thead class="table-primary"><tr><th>Shop ID</th><th>Bill</th><th>Promo</th><th>Date</th></tr></thead>
+  <tbody>
+    {% for t in transactions %}
+    <tr>
+      <td>{{ t.shop_id }}</td>
+      <td>{{ t.bill_amount }}</td>
+      <td style="color: {{ 'green' if t.promotion_amount>50 else 'blue' }}">{{ t.promotion_amount }}</td>
+      <td>{{ t.transaction_date }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-center">No transactions yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
