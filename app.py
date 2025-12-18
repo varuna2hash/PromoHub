@@ -1,13 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file, g
-import sqlite3, os, qrcode
+from flask import Flask, render_template, request, redirect, url_for, session, flash, g
+import sqlite3, os
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev123")  # change for production
+app.secret_key = os.environ.get("SECRET_KEY", "dev123")  # change in production
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DB_PATH = os.path.join(BASE_DIR, "database.db")
-QR_FOLDER = os.path.join(BASE_DIR, "static", "qrcodes")
-os.makedirs(QR_FOLDER, exist_ok=True)
 
 # ---------- DB helper ----------
 def get_db():
@@ -64,13 +62,6 @@ def generate_user_id(user_type):
     prefix = "C" if user_type.lower() == "customer" else "S"
     return f"{prefix}{count:05d}"
 
-def generate_qr(user_id, name, user_type):
-    data = f"{user_type}:{user_id}:{name}"
-    img = qrcode.make(data)
-    path = os.path.join(QR_FOLDER, f"{user_id}.png")
-    img.save(path)
-    return path
-
 # ---------- Routes ----------
 @app.route("/")
 def index():
@@ -81,57 +72,54 @@ def index():
 def register():
     if request.method == "POST":
         name      = request.form["name"].strip()
-        email     = request.form["email"].strip()
+        email     = request.form.get("email", "").strip()  # optional
         city      = request.form["city"].strip()
         address   = request.form["address"].strip()
-        bank_name = request.form["bank_name"].strip()
-        bank_acc  = request.form["bank_account"].strip()
         whatsapp  = request.form["whatsapp"].strip()
         user_type = request.form["user_type"].strip()
 
-        default_promo = 0.0
-        if user_type.lower() == "shop owner":
+        if user_type.lower() == "customer":
+            bank_name = request.form.get("bank_name", "").strip()
+            bank_account = request.form.get("bank_account", "").strip()
+            default_promo = 0
+        else:  # Shop owner
+            bank_name = None
+            bank_account = None
             default_promo = float(request.form.get("default_promo", 0))
 
         uid = generate_user_id(user_type)
-        generate_qr(uid, name, user_type)
 
         con = get_db()
         cur = con.cursor()
         cur.execute("""
-            INSERT INTO users (user_id,name,user_type,city,address,bank_name,bank_account,email,whatsapp,default_promo)
+            INSERT INTO users 
+            (user_id,name,user_type,city,address,bank_name,bank_account,email,whatsapp,default_promo)
             VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (uid, name, user_type, city, address, bank_name, bank_acc, email, whatsapp, default_promo)
+            (uid, name, user_type, city, address, bank_name, bank_account, email, whatsapp, default_promo)
         )
         con.commit()
         flash(f"Registered successfully — User ID: {uid}", "success")
-        return redirect(url_for("users"))
+        return redirect(url_for("login"))
     return render_template("register.html")
 
-# Users list
+# Users list (superadmin only)
 @app.route("/users")
 def users():
+    if session.get("user_type") != "superadmin":
+        flash("Only Super Admin can view users.", "danger")
+        return redirect(url_for("index"))
     con = get_db()
     cur = con.cursor()
     cur.execute("SELECT * FROM users ORDER BY id DESC")
     rows = cur.fetchall()
     return render_template("users.html", users=rows)
 
-# Download QR
-@app.route("/download_qr/<user_id>")
-def download_qr(user_id):
-    path = os.path.join(QR_FOLDER, f"{user_id}.png")
-    if not os.path.exists(path):
-        flash("QR not found.", "danger")
-        return redirect(url_for("users"))
-    return send_file(path, as_attachment=True)
-
-# Edit user
+# Edit user (superadmin only)
 @app.route("/edit/<user_id>", methods=["GET","POST"])
 def edit(user_id):
     if session.get("user_type") != "superadmin":
         flash("Only Super Admin can edit users.", "danger")
-        return redirect(url_for("users"))
+        return redirect(url_for("index"))
     con = get_db()
     cur = con.cursor()
     cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
@@ -143,10 +131,12 @@ def edit(user_id):
         cur.execute("""
             UPDATE users SET name=?, city=?, address=?, bank_name=?, bank_account=?, email=?, whatsapp=?, default_promo=?
             WHERE user_id=?""",
-            (request.form["name"].strip(), request.form["city"].strip(), request.form["address"].strip(),
-             request.form["bank_name"].strip(), request.form["bank_account"].strip(),
-             request.form["email"].strip(), request.form["whatsapp"].strip(),
-             float(request.form.get("default_promo", user["default_promo"])), user_id)
+            (request.form["name"].strip(), request.form.get("city", "").strip(),
+             request.form.get("address", "").strip(),
+             request.form.get("bank_name"), request.form.get("bank_account"),
+             request.form.get("email"), request.form.get("whatsapp"),
+             float(request.form.get("default_promo", user["default_promo"])),
+             user_id)
         )
         con.commit()
         flash("User updated successfully.", "success")
@@ -158,7 +148,7 @@ def edit(user_id):
 def delete(user_id):
     if session.get("user_type") != "superadmin":
         flash("Only Super Admin can delete users.", "danger")
-        return redirect(url_for("users"))
+        return redirect(url_for("index"))
     con = get_db()
     cur = con.cursor()
     cur.execute("DELETE FROM users WHERE user_id=?", (user_id,))
@@ -222,7 +212,6 @@ def shop_dashboard():
     if session.get("user_type", "").lower() != "shop owner":
         return redirect(url_for("login"))
     shop_id = session["user_id"]
-    msg = ""
     con = get_db()
     cur = con.cursor()
     cur.execute("SELECT default_promo FROM users WHERE user_id=?", (shop_id,))
@@ -274,11 +263,8 @@ def superadmin_dashboard():
     cur.execute("SELECT * FROM transactions ORDER BY id DESC")
     transactions = cur.fetchall()
 
-    # compute per-shop totals (simple example)
     cur.execute("SELECT shop_id, COUNT(*), SUM(bill_amount), SUM(promotion_amount) FROM transactions GROUP BY shop_id")
     shop_stats = cur.fetchall()
-
-    # compute per-customer totals
     cur.execute("SELECT customer_id, COUNT(*), SUM(bill_amount), SUM(promotion_amount) FROM transactions GROUP BY customer_id")
     cust_stats = cur.fetchall()
 
