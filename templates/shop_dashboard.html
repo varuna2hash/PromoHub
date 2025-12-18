@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Shop Dashboard{% endblock %}
+{% block content %}
+<h3>Welcome, {{ name }}</h3>
+<p class="small-muted">Default Promo: {{ default_promo }}%</p>
+
+<div class="row g-3 my-3">
+  <div class="col-md-4"><div class="card p-3"><strong>Total Txns</strong><div>{{ total_transactions }}</div></div></div>
+  <div class="col-md-4"><div class="card p-3"><strong>Total Sales</strong><div>{{ total_sales }}</div></div></div>
+  <div class="col-md-4"><div class="card p-3"><strong>Total Promo</strong><div>{{ total_promos }}</div></div></div>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5>Add Transaction</h5>
+  <form method="POST" class="row g-2">
+    <div class="col-md-4"><input type="date" class="form-control" name="transaction_date" required></div>
+    <div class="col-md-4"><input type="number" step="0.01" class="form-control" name="bill_amount" required placeholder="Bill"></div>
+    <div class="col-md-4"><input class="form-control" name="customer_phone" required placeholder="Customer WhatsApp"></div>
+    <div class="col-12"><button class="btn btn-primary mt-2">Add</button></div>
+  </form>
+</div>
+
+<h5>Transactions</h5>
+<table class="table table-striped datatable">
+  <thead class="table-primary"><tr><th>Date</th><th>Bill</th><th>Promo</th><th>Customer</th></tr></thead>
+  <tbody>
+    {% for t in transactions %}
+    <tr>
+      <td>{{ t.transaction_date }}</td>
+      <td>{{ t.bill_amount }}</td>
+      <td style="color: {{ 'green' if t.promotion_amount>50 else 'blue' }}">{{ t.promotion_amount }}</td>
+      <td>{{ t.customer_id }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-center">No transactions yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
